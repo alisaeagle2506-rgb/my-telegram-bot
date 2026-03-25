@@ -10,11 +10,13 @@ import requests
 load_dotenv()
 
 TOKEN = os.getenv('BOT_TOKEN')
-AI_TUNNEL = os.getenv('AI_TUNNEL_KEY', '').strip()
 
 if not TOKEN:
-    print("❌ Ошибка: BOT_TOKEN не найден!")
+    print("❌ ОШИБКА: BOT_TOKEN не найден в переменных окружения Railway!")
+    print("Добавьте переменную BOT_TOKEN во вкладке Variables")
     exit(1)
+
+AI_TUNNEL = os.getenv('AI_TUNNEL_KEY', '').strip()
 
 bot = telebot.TeleBot(TOKEN)
 
@@ -57,7 +59,7 @@ def get_new_posts(topic: str, last_seen_id: int = 0):
         return posts
 
     except Exception as e:
-        print(f"❌ Ошибка парсинга '{topic}': {e}")
+        print(f"❌ Ошибка парсинга тега '{topic}': {e}")
         return []
 
 
@@ -94,10 +96,12 @@ def monitoring_thread():
 @bot.message_handler(commands=['start'])
 def start(message):
     bot.reply_to(message,
-        "👋 Привет! Я мониторю Pikabu.ru.\n\n"
-        "/subscribe нейросети — подписаться\n"
-        "/my_topics — мои подписки\n"
-        "/unsubscribe нейросети — отписаться")
+        "👋 Привет! Я мониторю новые посты на Pikabu.ru.\n\n"
+        "Команды:\n"
+        "/subscribe нейросети — подписаться на тег\n"
+        "/my_topics — показать мои подписки\n"
+        "/unsubscribe нейросети — отписаться\n\n"
+        "Проверяю новые посты каждые 5 минут.")
 
 
 @bot.message_handler(commands=['subscribe'])
@@ -147,19 +151,19 @@ def unsubscribe(message):
 def my_topics(message):
     user_id = message.chat.id
     if user_id not in users or not users[user_id].get('topics'):
-        bot.reply_to(message, "У тебя нет активных подписок.")
+        bot.reply_to(message, "У тебя пока нет активных подписок.")
         return
 
     topics = "\n".join(f"• {t}" for t in users[user_id]['topics'].keys())
-    bot.reply_to(message, f"Твои подписки:\n{topics}")
+    bot.reply_to(message, f"Твои активные теги:\n{topics}")
 
 
 # ====================== Запуск ======================
 
 if __name__ == "__main__":
-    print("🚀 Бот запускается...")
+    print("🚀 Бот запускается на Railway...")
     threading.Thread(target=monitoring_thread, daemon=True).start()
-    print("✅ Бот успешно запущен и готов к работе")
+    print("✅ Бот успешно запущен и готов принимать команды")
     
     bot.infinity_polling(
         none_stop=True,
