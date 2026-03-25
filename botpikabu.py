@@ -9,23 +9,28 @@ import requests
 
 load_dotenv()
 
-TOKEN = os.getenv('BOT_TOKEN')
-AI_TUNNEL = os.getenv('AI_TUNNEL_KEY')
+TOKEN = os.getenv('8771463820:AAHmnfjYmqZwRP_ZvTLF6ahdTsQwJE9KtPIN')
+AI_TUNNEL = os.getenv('AI_TUNNEL_KEY', '').strip()
+
+if not TOKEN:
+    print("❌ Ошибка: BOT_TOKEN не найден!")
+    exit(1)
 
 bot = telebot.TeleBot(TOKEN)
 
-# Хранилище в памяти: {user_id: {'topics': {topic: last_id}}}
+# Хранилище подписок
 users = {}
 
 HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36'
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+                  '(KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36'
 }
 
-PROXIES = {'http': AI_TUNNEL, 'https': AI_TUNNEL} if AI_TUNNEL else None
+PROXIES = {'http': AI_TUNNEL, 'https': AI_TUNNEL} if AI_TUNNEL.startswith('http') else None
+print("🌐 Прокси:", "включён" if PROXIES else "отключён")
 
 
 def get_new_posts(topic: str, last_seen_id: int = 0):
-    """Парсит новые посты по тегу. Возвращает список новых (id > last_seen_id)."""
     url = f"https://pikabu.ru/tag/{topic}"
     try:
         r = requests.get(url, headers=HEADERS, proxies=PROXIES, timeout=15)
@@ -33,7 +38,6 @@ def get_new_posts(topic: str, last_seen_id: int = 0):
         soup = BeautifulSoup(r.text, 'html.parser')
 
         posts = []
-        # Основные карточки постов (актуально на 2026 год)
         for story in soup.find_all('div', class_='story'):
             link_tag = story.find('a', class_='story__title-link')
             if not link_tag:
@@ -41,7 +45,7 @@ def get_new_posts(topic: str, last_seen_id: int = 0):
 
             href = link_tag.get('href', '')
             title = link_tag.get_text(strip=True)
-            # Извлекаем ID поста из конца ссылки (всегда число)
+
             match = re.search(r'(\d{7,})$', href)
             if match:
                 story_id = int(match.group(1))
@@ -49,31 +53,28 @@ def get_new_posts(topic: str, last_seen_id: int = 0):
                     full_url = 'https://pikabu.ru' + href
                     posts.append({'id': story_id, 'title': title, 'url': full_url})
 
-        # Сортируем по новизне
         posts.sort(key=lambda x: x['id'], reverse=True)
         return posts
 
     except Exception as e:
-        print(f"Ошибка при парсинге {topic}: {e}")
+        print(f"❌ Ошибка парсинга '{topic}': {e}")
         return []
 
 
 def monitoring_thread():
-    """Фоновый мониторинг каждые 5 минут."""
+    print("🔄 Мониторинг запущен — проверка каждые 5 минут")
     while True:
         try:
             for user_id in list(users.keys()):
-                user_data = users[user_id]
-                for topic in list(user_data['topics'].keys()):
+                user_data = users.get(user_id, {})
+                for topic in list(user_data.get('topics', {}).keys()):
                     last_id = user_data['topics'][topic]
                     new_posts = get_new_posts(topic, last_id)
 
                     if new_posts:
-                        # Обновляем последний ID
                         max_id = max(p['id'] for p in new_posts)
                         user_data['topics'][topic] = max_id
 
-                        # Отправляем новые посты (самые свежие сверху)
                         for post in new_posts:
                             bot.send_message(
                                 user_id,
@@ -82,32 +83,31 @@ def monitoring_thread():
                                 f"🔗 {post['url']}",
                                 parse_mode='Markdown'
                             )
-        except:
-            pass  # не падаем при любой ошибке
+        except Exception as e:
+            print(f"⚠️ Ошибка в мониторинге: {e}")
 
-        time.sleep(300)  # 5 минут
+        time.sleep(300)
 
 
-# ================== Команды бота ==================
+# ====================== Команды ======================
 
 @bot.message_handler(commands=['start'])
 def start(message):
     bot.reply_to(message,
-        "👋 Привет! Я мониторю pikabu.ru по твоим тегам.\n\n"
-        "Команды:\n"
+        "👋 Привет! Я мониторю Pikabu.ru.\n\n"
         "/subscribe нейросети — подписаться\n"
-        "/my_topics — список твоих тем\n"
-        "/unsubscribe нейросети — отписаться\n\n"
-        "Бот проверяет новые посты каждые 5 минут.")
+        "/my_topics — мои подписки\n"
+        "/unsubscribe нейросети — отписаться")
 
 
 @bot.message_handler(commands=['subscribe'])
 def subscribe(message):
-    if len(message.text.split()) < 2:
-        bot.reply_to(message, "Укажи тег после команды, например:\n/subscribe нейросети")
+    parts = message.text.split(maxsplit=1)
+    if len(parts) < 2:
+        bot.reply_to(message, "Пример: /subscribe нейросети")
         return
 
-    topic = message.text.split(maxsplit=1)[1].strip()
+    topic = parts[1].strip().lower()
     user_id = message.chat.id
 
     if user_id not in users:
@@ -117,21 +117,21 @@ def subscribe(message):
         bot.reply_to(message, f"✅ Уже подписан на «{topic}»")
         return
 
-    # Инициализируем последний ID (чтобы не слать старые посты)
     new_posts = get_new_posts(topic, 0)
     last_id = max((p['id'] for p in new_posts), default=0)
 
     users[user_id]['topics'][topic] = last_id
-    bot.reply_to(message, f"✅ Подписка на «{topic}» активирована!\nБуду присылать только новые посты.")
+    bot.reply_to(message, f"✅ Подписка на «{topic}» активирована!")
 
 
 @bot.message_handler(commands=['unsubscribe'])
 def unsubscribe(message):
-    if len(message.text.split()) < 2:
-        bot.reply_to(message, "Укажи тег после команды")
+    parts = message.text.split(maxsplit=1)
+    if len(parts) < 2:
+        bot.reply_to(message, "Пример: /unsubscribe нейросети")
         return
 
-    topic = message.text.split(maxsplit=1)[1].strip()
+    topic = parts[1].strip().lower()
     user_id = message.chat.id
 
     if user_id in users and topic in users[user_id]['topics']:
@@ -140,22 +140,30 @@ def unsubscribe(message):
             del users[user_id]
         bot.reply_to(message, f"❌ Отписан от «{topic}»")
     else:
-        bot.reply_to(message, "Ты не подписан на этот тег")
+        bot.reply_to(message, "Ты не подписан на этот тег.")
 
 
 @bot.message_handler(commands=['my_topics'])
 def my_topics(message):
     user_id = message.chat.id
-    if user_id not in users or not users[user_id]['topics']:
-        bot.reply_to(message, "У тебя нет активных подписок")
+    if user_id not in users or not users[user_id].get('topics'):
+        bot.reply_to(message, "У тебя нет активных подписок.")
         return
 
     topics = "\n".join(f"• {t}" for t in users[user_id]['topics'].keys())
-    bot.reply_to(message, f"Твои темы:\n{topics}")
+    bot.reply_to(message, f"Твои подписки:\n{topics}")
 
 
-# Запускаем мониторинг в отдельном потоке
-threading.Thread(target=monitoring_thread, daemon=True).start()
+# ====================== Запуск ======================
 
-print("Бот запущен...")
-bot.infinity_polling()
+if __name__ == "__main__":
+    print("🚀 Бот запускается...")
+    threading.Thread(target=monitoring_thread, daemon=True).start()
+    print("✅ Бот успешно запущен и готов к работе")
+    
+    bot.infinity_polling(
+        none_stop=True,
+        interval=1,
+        timeout=20,
+        allowed_updates=["message"]
+    )
