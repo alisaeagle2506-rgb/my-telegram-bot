@@ -9,7 +9,7 @@ import requests
 
 load_dotenv()
 
-TOKEN = os.getenv('8771463820:AAHmnfjYmqZwRP_ZvTLF6ahdTsQwJE9KtPIN')
+TOKEN = os.getenv('BOT_TOKEN')
 AI_TUNNEL = os.getenv('AI_TUNNEL_KEY', '').strip()
 
 if not TOKEN:
